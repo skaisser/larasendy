@@ -44,7 +44,7 @@ composer require skaisser/larasendy
 Publish the configuration file:
 
 ```bash
-php artisan vendor:publish --provider="Skaisser\LaraSendy\LaraSendyServiceProvider"
+php artisan vendor:publish --provider="Skaisser\LaraSendy\SendyServiceProvider"
 ```
 
 Configure your `.env` file:

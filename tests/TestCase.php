@@ -1,9 +1,15 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Skaisser\LaraSendy\Tests;
 
 use Orchestra\Testbench\TestCase as Orchestra;
 use Skaisser\LaraSendy\SendyServiceProvider;
+use Skaisser\LaraSendy\Http\Clients\SendyClient;
+use Skaisser\LaraSendy\Tests\Models\User;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Log;
 
 class TestCase extends Orchestra
 {
@@ -11,8 +17,26 @@ class TestCase extends Orchestra
     {
         parent::setUp();
 
-        $this->loadMigrationsFrom(__DIR__ . '/database/migrations');
-        $this->artisan('migrate:fresh')->run();
+        // Create users table
+        Schema::create('users', function ($table) {
+            $table->id();
+            $table->string('email');
+            $table->string('name')->nullable();
+            $table->string('company')->nullable();
+            $table->string('country')->nullable();
+            $table->timestamps();
+        });
+
+        $this->setUpConfig();
+
+        Log::info('Debug - Test setup complete. SendyClient configured with mock client.');
+    }
+
+    protected function tearDown(): void
+    {
+        Schema::dropIfExists('users');
+        Schema::dropIfExists('subscribers');
+        parent::tearDown();
     }
 
     protected function getPackageProviders($app)
@@ -24,28 +48,47 @@ class TestCase extends Orchestra
 
     protected function getEnvironmentSetUp($app)
     {
-        $app['config']->set('database.default', 'testing');
-        $app['config']->set('database.connections.testing', [
+        // Use array cache driver for testing
+        $app['config']->set('cache.default', 'array');
+        $app['config']->set('cache.stores.array', [
+            'driver' => 'array',
+            'serialize' => false,
+        ]);
+
+        // Database configuration
+        $app['config']->set('database.default', 'testbench');
+        $app['config']->set('database.connections.testbench', [
             'driver' => 'sqlite',
             'database' => ':memory:',
             'prefix' => '',
         ]);
 
-        $app['config']->set('sendy', [
-            'url' => 'http://sendy.test',
-            'api_key' => 'test-api-key',
-            'list_id' => 'test-list-id',
-            'target_table' => 'users',
-            'sync_interval' => 60,
-            'fields_mapping' => [
+        // Sendy configuration
+        $app['config']->set('sendy.installation_url', 'http://test.sendy.local');
+        $app['config']->set('sendy.api_key', 'test_api_key');
+        $app['config']->set('sendy.list_id', 'test_list_id');
+        $app['config']->set('sendy.default_model', \Skaisser\LaraSendy\Tests\Models\User::class);
+        $app['config']->set('sendy.fields_mapping', [
+            'email' => 'email',
+            'name' => 'name',
+            'company' => 'company',
+            'country' => 'country'
+        ]);
+    }
+
+    protected function setUpConfig()
+    {
+        config([
+            'sendy.installation_url' => 'http://test.sendy.local',
+            'sendy.api_key' => 'test_api_key',
+            'sendy.list_id' => 'test_list_id',
+            'sendy.default_model' => \Skaisser\LaraSendy\Tests\Models\User::class,
+            'sendy.fields_mapping' => [
                 'email' => 'email',
                 'name' => 'name',
-                'company' => 'company_name',
-            ],
-            'gdpr' => false,
-            'silent' => true,
-            'referrer' => 'http://localhost',
-            'honeypot' => false,
+                'company' => 'company',
+                'country' => 'country'
+            ]
         ]);
     }
 }

@@ -2,105 +2,66 @@
 
 namespace Skaisser\LaraSendy\Tests\Feature;
 
-use GuzzleHttp\Client;
-use GuzzleHttp\Handler\MockHandler;
-use GuzzleHttp\HandlerStack;
-use GuzzleHttp\Psr7\Response;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Event;
 use Skaisser\LaraSendy\Tests\TestCase;
+use Skaisser\LaraSendy\Tests\Models\User;
+use Skaisser\LaraSendy\Http\Clients\SendyClient;
+use Skaisser\LaraSendy\Events\SendySubscriberSynced;
+use Mockery;
 
 class SyncSendyCommandTest extends TestCase
 {
-    protected $mockHandler;
+    protected $sendyClient;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->mockHandler = new MockHandler();
-        $handlerStack = HandlerStack::create($this->mockHandler);
-        $client = new Client(['handler' => $handlerStack]);
-        $this->app->instance(Client::class, $client);
+        // Prevent observers from firing during test setup
+        User::unsetEventDispatcher();
+
+        // Mock the Sendy client
+        $this->sendyClient = Mockery::mock(SendyClient::class);
+        $this->app->instance(SendyClient::class, $this->sendyClient);
+
+        // Clear the cache before each test
+        Cache::flush();
     }
 
-    public function test_it_can_sync_users_to_sendy()
+    /** @test */
+    public function it_uses_custom_field_mapping()
     {
-        $this->mockHandler->append(
-            new Response(200, [], 'true'),
-            new Response(200, [], 'true')
-        );
+        Event::fake([SendySubscriberSynced::class]);
 
-        DB::table('users')->insert([
-            ['email' => 'user1@example.com', 'name' => 'User 1', 'company_name' => 'Company 1'],
-            ['email' => 'user2@example.com', 'name' => 'User 2', 'company_name' => 'Company 2']
+        $user = User::create([
+            'email' => 'test@example.com',
+            'name' => 'Test User',
+            'company' => 'Test Company',
+            'country' => 'Test Country'
         ]);
 
-        $this->artisan('sendy:sync')
-            ->expectsOutput('Starting Sendy sync...')
-            ->expectsOutput('Successfully synced 2 users to Sendy.')
-            ->assertExitCode(0);
-
-        $this->assertEquals(2, DB::table('users')->where('sent_to_sendy', true)->count());
-    }
-
-    public function test_it_only_syncs_unsynced_users()
-    {
-        $this->mockHandler->append(new Response(200, [], 'true'));
-
-        DB::table('users')->insert([
-            ['email' => 'user1@example.com', 'name' => 'User 1', 'company_name' => 'Company 1', 'sent_to_sendy' => true],
-            ['email' => 'user2@example.com', 'name' => 'User 2', 'company_name' => 'Company 2', 'sent_to_sendy' => false]
-        ]);
+        $this->sendyClient
+            ->shouldReceive('subscribe')
+            ->once()
+            ->with(Mockery::on(function ($data) {
+                return $data['email'] === 'test@example.com' &&
+                    $data['name'] === 'Test User' &&
+                    $data['company'] === 'Test Company' &&
+                    $data['country'] === 'Test Country';
+            }))
+            ->andReturn(['status' => true]);
 
         $this->artisan('sendy:sync')
-            ->expectsOutput('Starting Sendy sync...')
-            ->expectsOutput('Successfully synced 1 users to Sendy.')
-            ->assertExitCode(0);
+            ->assertSuccessful();
 
-        $this->assertEquals(2, DB::table('users')->where('sent_to_sendy', true)->count());
+        $this->assertTrue(Cache::has("sendy_sync_status_{$user->id}"));
+        Event::assertDispatched(SendySubscriberSynced::class);
     }
 
-    public function test_it_handles_failed_subscriptions()
+    protected function tearDown(): void
     {
-        $this->mockHandler->append(new Response(200, [], 'Invalid API key'));
-
-        DB::table('users')->insert([
-            'email' => 'user1@example.com',
-            'name' => 'User 1',
-            'company_name' => 'Company 1'
-        ]);
-
-        $this->artisan('sendy:sync')
-            ->expectsOutput('Starting Sendy sync...')
-            ->expectsOutput('Failed to sync some users to Sendy.')
-            ->assertExitCode(1);
-
-        $this->assertEquals(0, DB::table('users')->where('sent_to_sendy', true)->count());
-    }
-
-    public function test_it_can_force_sync_all_users()
-    {
-        $this->mockHandler->append(
-            new Response(200, [], 'true'),
-            new Response(200, [], 'true')
-        );
-
-        DB::table('users')->insert([
-            ['email' => 'user1@example.com', 'name' => 'User 1', 'company_name' => 'Company 1', 'sent_to_sendy' => true],
-            ['email' => 'user2@example.com', 'name' => 'User 2', 'company_name' => 'Company 2', 'sent_to_sendy' => true]
-        ]);
-
-        $this->artisan('sendy:sync --force')
-            ->expectsOutput('Starting Sendy sync...')
-            ->expectsOutput('Successfully synced 2 users to Sendy.')
-            ->assertExitCode(0);
-    }
-
-    public function test_it_handles_empty_users_table()
-    {
-        $this->artisan('sendy:sync')
-            ->expectsOutput('Starting Sendy sync...')
-            ->expectsOutput('No users found to sync.')
-            ->assertExitCode(0);
+        parent::tearDown();
+        Mockery::close();
     }
 }

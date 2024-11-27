@@ -1,67 +1,116 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Skaisser\LaraSendy\Console\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Skaisser\LaraSendy\Http\Clients\SendyClient;
+use Skaisser\LaraSendy\Events\SendySubscriberSynced;
 
 class SyncSendyCommand extends Command
 {
-    protected $signature = 'sendy:sync {--force : Force sync all users regardless of sent_to_sendy status}';
-    protected $description = 'Sync users to Sendy mailing list';
+    /**
+     * The name and signature of the console command.
+     *
+     * @var string
+     */
+    protected $signature = 'sendy:sync';
 
-    protected $sendyClient;
+    /**
+     * The console command description.
+     *
+     * @var string
+     */
+    protected $description = 'Sync subscribers to Sendy';
 
-    public function __construct(SendyClient $sendyClient)
+    /**
+     * The Sendy client instance.
+     *
+     * @var \Skaisser\LaraSendy\Http\Clients\SendyClient
+     */
+    protected $client;
+
+    /**
+     * Create a new command instance.
+     *
+     * @param  \Skaisser\LaraSendy\Http\Clients\SendyClient  $client
+     * @return void
+     */
+    public function __construct(SendyClient $client)
     {
         parent::__construct();
-        $this->sendyClient = $sendyClient;
+        $this->client = $client;
     }
 
+    /**
+     * Execute the console command.
+     *
+     * @return int
+     */
     public function handle()
     {
-        $this->info('Starting Sendy sync...');
+        $model = config('sendy.default_model');
+        $chunkSize = config('sendy.sync_chunk_size', 100);
 
-        $query = DB::table(config('sendy.target_table', 'users'));
+        $query = $model::query();
 
-        if (!$this->option('force')) {
-            $query->where('sent_to_sendy', false);
-        }
+        $total = $query->count();
+        $bar = $this->output->createProgressBar($total);
 
-        $users = $query->get();
-
-        if ($users->isEmpty()) {
-            $this->info('No users found to sync.');
-            return 0;
-        }
-
-        $failedSync = false;
-        $syncedCount = 0;
-
-        foreach ($users as $user) {
-            $response = $this->sendyClient->subscribe([
-                'name' => $user->name,
-                'email' => $user->email,
-                'company_name' => $user->company_name
-            ]);
-
-            if ($response === true) {
-                DB::table(config('sendy.target_table', 'users'))
-                    ->where('id', $user->id)
-                    ->update(['sent_to_sendy' => true]);
-                $syncedCount++;
-            } else {
-                $failedSync = true;
+        $query->chunk($chunkSize, function ($subscribers) use ($bar) {
+            foreach ($subscribers as $subscriber) {
+                $this->syncSubscriber($subscriber);
+                $bar->advance();
             }
+        });
+
+        $bar->finish();
+        $this->newLine();
+
+        return Command::SUCCESS;
+    }
+
+    /**
+     * Sync a single subscriber to Sendy.
+     *
+     * @param  \Illuminate\Database\Eloquent\Model  $subscriber
+     * @return void
+     */
+    protected function syncSubscriber($subscriber)
+    {
+        $mapping = config('sendy.fields_mapping', []);
+        $data = [];
+
+        foreach ($mapping as $sendyField => $modelField) {
+            $data[$sendyField] = $subscriber->{$modelField};
         }
 
-        if ($failedSync) {
-            $this->error('Failed to sync some users to Sendy.');
-            return 1;
-        }
+        try {
+            $response = $this->client->subscribe($data);
 
-        $this->info("Successfully synced {$syncedCount} users to Sendy.");
-        return 0;
+            if ($response['status']) {
+                Cache::put(
+                    "sendy_sync_status_{$subscriber->id}",
+                    true,
+                    now()->addDay()
+                );
+
+                event(new SendySubscriberSynced($subscriber, $response));
+            } else {
+                Cache::put(
+                    "sendy_sync_error_{$subscriber->id}",
+                    $response['message'] ?? 'Unknown error',
+                    now()->addDay()
+                );
+            }
+        } catch (\Exception $e) {
+            Cache::put(
+                "sendy_sync_error_{$subscriber->id}",
+                $e->getMessage(),
+                now()->addDay()
+            );
+        }
     }
 }

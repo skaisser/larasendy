@@ -12,13 +12,13 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Sendy URL
+    | Sendy Installation URL
     |--------------------------------------------------------------------------
     |
     | The URL of your Sendy installation.
     |
     */
-    'url' => env('SENDY_URL', 'http://your-sendy-installation.com'),
+    'url' => env('SENDY_INSTALLATION_URL', 'http://your-sendy-installation.com'),
 
     /*
     |--------------------------------------------------------------------------
@@ -42,61 +42,48 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Target Table
+    | Field Mapping
     |--------------------------------------------------------------------------
     |
-    | The database table that contains the users to be synced with Sendy.
+    | Map Sendy fields to your model fields. The keys are the Sendy field names,
+    | and the values are your model's field names.
     |
     */
-    'target_table' => env('SENDY_TARGET_TABLE', 'users'),
+    'fields_mapping' => [
+        'email' => env('SENDY_EMAIL_FIELD', 'email'),  // Required
+        'name' => env('SENDY_NAME_FIELD', 'name'),    // Optional
+        // Add your custom fields here
+        // 'company' => 'organization_name',
+        // 'country' => 'user_country',
+    ],
 
     /*
     |--------------------------------------------------------------------------
-    | Sync Interval
+    | Synchronization Settings
     |--------------------------------------------------------------------------
-    |
-    | The interval in minutes between each sync operation.
-    |
     */
+
+    // Default model to sync
+    'default_model' => env('SENDY_DEFAULT_MODEL', 'App\\Models\\User'),
+
+    // Chunk size for batch operations
+    'sync_chunk_size' => env('SENDY_SYNC_CHUNK_SIZE', 100),
+
+    // Sync schedule interval in minutes
     'sync_interval' => env('SENDY_SYNC_INTERVAL', 60),
 
-    /*
-    |--------------------------------------------------------------------------
-    | GDPR Compliance
-    |--------------------------------------------------------------------------
-    |
-    | Whether to enable GDPR compliance mode.
-    |
-    */
-    'gdpr' => env('SENDY_GDPR', false),
+    // Sync schedule (cron expression)
+    'sync_schedule' => env('SENDY_SYNC_SCHEDULE', 'hourly'),
 
     /*
     |--------------------------------------------------------------------------
-    | Silent Mode
+    | Deletion Actions
     |--------------------------------------------------------------------------
     |
-    | Whether to suppress error messages and continue processing on errors.
+    | Configure what happens to Sendy subscriptions when models are deleted
+    | Options: 'none', 'unsubscribe', 'delete'
     |
     */
-    'silent' => env('SENDY_SILENT', true),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Referrer URL
-    |--------------------------------------------------------------------------
-    |
-    | The referrer URL to be sent with subscription requests.
-    |
-    */
-    'referrer' => env('SENDY_REFERRER', env('APP_URL')),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Honeypot Protection
-    |--------------------------------------------------------------------------
-    |
-    | Whether to enable honeypot protection for subscription forms.
-    |
-    */
-    'honeypot' => env('SENDY_HONEYPOT', false),
+    'on_delete_action' => env('SENDY_ON_DELETE_ACTION', 'none'),
+    'on_soft_delete_action' => env('SENDY_ON_SOFT_DELETE_ACTION', 'none'),
 ];

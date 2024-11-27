@@ -125,7 +125,7 @@ If you discover any security related issues, please email the author instead of 
 
 ## Credits
 
-- [Samuel Kaisser](https://github.com/skaisser)
+- [Shirleyson Kaisser](https://github.com/skaisser)
 
 ## License
 

@@ -39,37 +39,24 @@ class SendyServiceProvider extends ServiceProvider
             $this->publishes([
                 __DIR__.'/../config/sendy.php' => config_path('sendy.php'),
             ], 'config');
-
-            $this->publishes([
-                __DIR__.'/../database/migrations/' => database_path('migrations'),
-            ], 'migrations');
         }
 
         $this->setupScheduler();
     }
 
     /**
-     * Set up the command scheduler
+     * Setup the scheduler.
      */
     protected function setupScheduler(): void
     {
-        $schedule = $this->app->make(\Illuminate\Console\Scheduling\Schedule::class);
-        $frequency = config('sendy.sync_schedule', 'hourly');
-
-        $command = $schedule->command('sendy:sync');
-
-        switch ($frequency) {
-            case 'hourly':
-                $command->hourly();
-                break;
-            case 'daily':
-                $command->daily();
-                break;
-            case 'custom':
-                // Custom schedule can be defined in the app's scheduler
-                break;
-            default:
-                $command->hourly();
+        if ($this->app->runningInConsole() && config('sendy.schedule_enabled', false)) {
+            $this->app->booted(function () {
+                $schedule = $this->app->make(\Illuminate\Console\Scheduling\Schedule::class);
+                $schedule->command('sendy:sync')
+                    ->withoutOverlapping()
+                    ->runInBackground()
+                    ->cron(config('sendy.schedule_cron', '0 * * * *'));
+            });
         }
     }
 }

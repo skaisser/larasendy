@@ -5,8 +5,16 @@ namespace Skaisser\LaraSendy\Tests;
 use Orchestra\Testbench\TestCase as Orchestra;
 use Skaisser\LaraSendy\SendyServiceProvider;
 
-abstract class TestCase extends Orchestra
+class TestCase extends Orchestra
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->loadMigrationsFrom(__DIR__ . '/database/migrations');
+        $this->artisan('migrate:fresh')->run();
+    }
+
     protected function getPackageProviders($app)
     {
         return [
@@ -14,19 +22,17 @@ abstract class TestCase extends Orchestra
         ];
     }
 
-    protected function defineEnvironment($app)
+    protected function getEnvironmentSetUp($app)
     {
-        // Setup default database to use sqlite :memory:
-        $app['config']->set('database.default', 'testbench');
-        $app['config']->set('database.connections.testbench', [
-            'driver'   => 'sqlite',
+        $app['config']->set('database.default', 'testing');
+        $app['config']->set('database.connections.testing', [
+            'driver' => 'sqlite',
             'database' => ':memory:',
-            'prefix'   => '',
+            'prefix' => '',
         ]);
 
-        // Setup Sendy configuration for testing
         $app['config']->set('sendy', [
-            'url' => 'https://test-sendy-url.com',
+            'url' => 'http://sendy.test',
             'api_key' => 'test-api-key',
             'list_id' => 'test-list-id',
             'target_table' => 'users',
@@ -36,22 +42,10 @@ abstract class TestCase extends Orchestra
                 'name' => 'name',
                 'company' => 'company_name',
             ],
+            'gdpr' => false,
+            'silent' => true,
+            'referrer' => 'http://localhost',
+            'honeypot' => false,
         ]);
-    }
-
-    protected function defineDatabaseMigrations()
-    {
-        $this->loadMigrationsFrom(__DIR__ . '/../src/database/migrations');
-        
-        // Create a test users table
-        $this->artisan('migrate', ['--database' => 'testbench'])->run();
-        
-        \Illuminate\Support\Facades\Schema::create('users', function ($table) {
-            $table->id();
-            $table->string('email');
-            $table->string('name')->nullable();
-            $table->string('company_name')->nullable();
-            $table->timestamps();
-        });
     }
 }

@@ -2,8 +2,9 @@
 
 namespace Skaisser\LaraSendy;
 
+use GuzzleHttp\Client;
 use Illuminate\Support\ServiceProvider;
-use Skaisser\LaraSendy\Console\Commands\SyncSendy;
+use Skaisser\LaraSendy\Console\Commands\SyncSendyCommand;
 use Skaisser\LaraSendy\Http\Clients\SendyClient;
 
 class SendyServiceProvider extends ServiceProvider
@@ -16,19 +17,19 @@ class SendyServiceProvider extends ServiceProvider
     public function boot()
     {
         // Publish configuration
-        $this->publishes([
-            __DIR__ . '/config/sendy.php' => config_path('sendy.php'),
-        ], 'config');
-
-        // Publish migrations
-        $this->publishes([
-            __DIR__ . '/database/migrations' => database_path('migrations'),
-        ], 'migrations');
-
-        // Register commands
         if ($this->app->runningInConsole()) {
+            $this->publishes([
+                __DIR__.'/../config/sendy.php' => config_path('sendy.php'),
+            ], 'config');
+
+            // Publish migrations
+            $this->publishes([
+                __DIR__.'/../database/migrations/' => database_path('migrations')
+            ], 'migrations');
+
+            // Register commands
             $this->commands([
-                SyncSendy::class,
+                SyncSendyCommand::class,
             ]);
         }
 
@@ -51,14 +52,16 @@ class SendyServiceProvider extends ServiceProvider
     public function register()
     {
         // Merge configuration
-        $this->mergeConfigFrom(
-            __DIR__ . '/config/sendy.php',
-            'sendy'
-        );
+        $this->mergeConfigFrom(__DIR__.'/../config/sendy.php', 'sendy');
 
         // Register SendyClient as a singleton
         $this->app->singleton(SendyClient::class, function ($app) {
-            return new SendyClient();
+            return new SendyClient(
+                new Client(),
+                config('sendy.url'),
+                config('sendy.api_key'),
+                config('sendy.list_id')
+            );
         });
     }
 }
